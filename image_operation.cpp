@@ -27,7 +27,7 @@ struct complex mulity(complex a, complex b){
 	r.imag = a.real*b.imag+a.imag*b.real;
 	return r;
 }
-//bitÎ»×ªÖÃ
+//bitä½è½¬ç½®
 void bitrp(complex* fd, int n){
 	int i, j, a, b, p;
 	for (i = 1, p = 0; i < n; i *= 2){
@@ -52,7 +52,7 @@ void bitrp(complex* fd, int n){
 }
 
 const float PI = 3.1415926;
-//¿ìËÙ¸µÀïÒ¶±ä»»
+//å¿«é€Ÿå‚…é‡Œå¶å˜æ¢
 void fft(complex* fd, int r){
 	int n = 1<<r;
 	struct complex *w = new complex[n/2];
@@ -78,7 +78,7 @@ void fft(complex* fd, int r){
 	free(w);
 }
 
-//¶şÎ¬¸µÀïÒ¶±ä»»
+//äºŒç»´å‚…é‡Œå¶å˜æ¢
 void fourier(unsigned char* pixels, int width, int height){
 	int wc, hc;
 	int wr, hr;
@@ -130,7 +130,7 @@ void fourier(unsigned char* pixels, int width, int height){
 	free(td);
 	free(fd);
 }
-//ÖĞÖµ
+//ä¸­å€¼
 unsigned char center_value(unsigned char* array, int length){
 	for(int i = 0; i < length/2; i++){
 		for(int j = i+1; j< length; j++){
@@ -143,7 +143,7 @@ unsigned char center_value(unsigned char* array, int length){
 	}
 	return array[length/2-1];
 }
-//ÖĞÖµÂË²¨
+//ä¸­å€¼æ»¤æ³¢
 void MidFilter(unsigned char* image,int width, int height)
 {
 	unsigned char* result = new unsigned char[width*height];
@@ -170,32 +170,57 @@ void MidFilter(unsigned char* image,int width, int height)
 	delete result;
 	delete rect;
 }
-unsigned char get_pixel(unsigned char* data, int width, int x, int y) {
-	return data[y*width +x];
+
+//æ¨¡æ¿è¿ç®—
+void TemplateLaplace(unsigned char* pixels, int width, int height, double * tem ,int tem_w,int tem_h,double xishu)
+{
+	unsigned char* result = new unsigned char[width*height];
+	for(int y = tem_h/2; y < height-tem_h/2; y++){
+		for(int x = tem_w/2; x < width-tem_w/2; x++){
+			int sum = 0;
+			int count = 0;
+			for(int m = -tem_h/2; m < tem_h/2; m++)
+				for(int n = -tem_w/2; n < tem_w/2; n++)
+					sum+=pixels[(y+m)*width+x+n]*tem[count++];
+			result[y*width+x] = sum*xishu;
+			if(result[y*width+x]<0){
+				result[y*width+x] = 0;
+			}
+			else if(result[y*width+x]>255){
+				
+				result[y*width+x] = 255;
+			}
+		}
+	}
+	for(int i = 0; i < width*height; i++){
+		pixels[i] = result[i];
+	}
 }
 
-void writeToFile(char* fileName, int width, int height, unsigned char* output){
-	FILE* file = fopen(fileName, "w");
+//ç›´æ–¹å›¾å‡è¡¡
+void InteEqualize(unsigned char* image, int width, int height)
+{		
+	int count[256];
+	int size = width*height;
+	memset(count, 0, sizeof(count));
 
-	if(!file)
-		return;
-
-	fprintf(file, "P6\n");
-	fprintf(file, "%d %d\n", width, height);
-	fprintf(file, "255\n");
-
-	for (int x = 0; x < width; ++x)
-	{
-		for (int y = 0; y < height; ++y)
-		{
-			fprintf(file, "%c%c%c", get_pixel(output, width, x, y), get_pixel(output, width, x, y), 
-             get_pixel(output, width, x, y));
-		}
-
+	float p[256];
+	for(int i = 0; i < size; i++){
+		count[image[i]]++;
 	}
 
-
+	for(int i = 0; i < 256; i++){
+		p[i] = ((float)count[i])/size;
+	}
+	for(int i = 0; i < size; i++){
+		float t = 0;
+		for(int j = 0; j <= image[i]; j++)
+			t+=p[j];	
+		image[i] =(unsigned int) (t*255);
+	}
 }
+
+
 int main(){
 	FILE *file = fopen("lenna.bmp", "rb");
 	if(file==NULL) return 0 ;
@@ -219,9 +244,15 @@ int main(){
 	fread(pixels, 1, lineBytes*height, file);
 	fclose(file);
 
-	fourier(pixels, width, height);
+	//fourier(pixels, width, height);
 
 	//MidFilter(pixels, width, height);
+	
+	//double tem[] = {1, 1, 1, 1, -8, 1, 1 ,1, 1};
+	//TemplateLaplace(pixels, width, height, tem, 3, 3, 1);
+
+	InteEqualize(pixels, width, height);
+
 
 	file = fopen("myimage.bmp", "wb");
 	if(file==NULL)
