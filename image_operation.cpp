@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 struct complex{
-	float real, imag;
+	double real, imag;
 } ;
 struct complex add(complex a, complex b){
 	struct complex r;
@@ -23,7 +23,7 @@ struct complex sub(complex a, complex b){
 
 struct complex mulity(complex a, complex b){
 	struct complex r;
-	r.real = a.real*b.real-a.imag*b.real;
+	r.real = a.real*b.real-a.imag*b.imag;
 	r.imag = a.real*b.imag+a.imag*b.real;
 	return r;
 }
@@ -51,84 +51,124 @@ void bitrp(complex* fd, int n){
 	}
 }
 
-const float PI = 3.1415926;
+const double PI = 3.1415926535;
 //快速傅里叶变换
-void fft(complex* fd, int r){
-	int n = 1<<r;
-	struct complex *w = new complex[n/2];
-	float angle;
-	for(int i = 0; i < n/2; i++){
-		angle = -2*PI*i/n;
-		w[i].real = cos(angle);
-		w[i].imag = sin(angle);
+void fft(complex* td, complex* fd, int r){
+	int count = 1 << r;
+	int i, j, k;
+	int bfsize;
+	double angle;
+	complex *W, *X1, *X2, *X;
+	
+	W  = new complex[count / 2];
+	X1 = new complex[count];
+	X2 = new complex[count];
+
+	for(i = 0; i < count/2; i++){
+		angle = -i*PI*2/count;
+		W[i].real = cos(angle);
+		W[i].imag = sin(angle);
+
 	}
-	bitrp(fd, n);
-	for(int i = 1; i < r; i++){
-		int group = 1<<r-i;
-		for(int j = 0; j < group; j++){
-			int member = n/group;
-			for(int k = 0; k < member/2; k++){
-				int s = j*member;
-				struct complex t = mulity(w[k*group], fd[s+k+member/2]);
-				fd[s+k] = add(fd[s+k], t);
-				fd[s+k+member/2] = sub(fd[s+k], t);
+
+	memcpy(X1, td, sizeof(complex)*count);
+	for(k = 0; k < r; k++){
+		for(j = 0; j < 1<<k; j++){
+			bfsize = 1 << (r-k);
+			for(i = 0; i < bfsize/2; i++){
+				int p = j*bfsize;
+				X2[p+i] = add(X1[p+i],X1[p+i+bfsize/2]);
+				complex t = mulity(sub(X1[p+i],X1[p+i+bfsize/2]), W[i*(1<<k)]);
+				X2[p+i+bfsize/2] = t;
 			}
 		}
+		X = X1;
+		X1 = X2;
+		X2 = X;
 	}
-	free(w);
+	for(j = 0; j < count; j++){
+		int p = 0; 
+		for(i = 0; i < r; i++){
+			if(j&(1<<i)){
+				p+=1<<(r-i-1);
+			}
+		}
+		fd[j] = X1[p];
+	}
+	delete W;
+	delete X1;
+	delete X2;
 }
 
+void writePixelsToFile(char* fileName, unsigned char* pixels, int width, int height){
+	FILE* file = fopen(fileName, "w");
+	if(file==NULL) return;
+	for(int i = 0; i < height; i ++){
+		for(int j = 0; j < width; j++)
+			fprintf(file, "%d ", pixels[i*width+j]);
+	}
+	fclose(file);
+}
 //二维傅里叶变换
 void fourier(unsigned char* pixels, int width, int height){
-	int wc, hc;
-	int wr, hr;
-	wc = hc = 1;
-	wr = hr = 0;
-	while(wc<width){
-		wc*=2;
-		wr ++;
+	int i, j, w, h;
+	int wp, hp;
+	int lineBytes = (width*8+31)/32*4;
+	w = 1;
+	h = 1;
+	wp = hp = 0;
+	while(w*2<=width){
+		wp++;
+		w*=2;
 	}
-	while(hc<height){
-		hc*=2;
-		hr ++;
+	while(h*2<=height){
+		hp++;
+		h*=2;
 	}
-
-	struct complex* fd = (struct complex*)malloc(sizeof(complex)*wc);
-	struct complex* td = (struct complex*)malloc(sizeof(complex)*hc);
-	struct complex* timage = (struct complex*)malloc(sizeof(complex)*wc*hc);
-
-	for(int y = 0; y < hc; y++)
-		for(int x = 0; x < wc; x++){
-			timage[y*hc+x].real = pixels[y*hc+x];	
-			timage[y*hc+x].imag = 0;
-		}
+	complex *td = (complex*)malloc(sizeof(complex)*w*h);
+	complex *fd = (complex*)malloc(sizeof(complex)*w*h);
 	
-	for(int x = 0; x < wc; x++){
-		for(int y = 0; y < hc; y++){
-			fd[y]=timage[y*wc+x];
-		}
-		fft(fd, hr); 
-		for(int y = 0; y < hc; y++){
-			timage[y*wc+x] = fd[y];
+	for(i = 0; i < h; i++){
+		for(j = 0; j < w; j++){
+			td[i*w+j].real = pixels[lineBytes*(height-i-1)+j];
+			td[i*w+j].imag = 0;
 		}
 	}
-	for(int y = 0; y < hc; y++){
-		for(int x = 0; x < wc; x++){
-			td[x] = timage[y*wc+x];
-		}
-		fft(td, wr);
-		for(int x = 0; x < wc; x++)
-			timage[y*wc+x] = td[x];
+	
+	for(i = 0; i < h; i++){
+		fft(&td[w*i], &fd[w*i], wp);
 	}
-	for(int y = 0; y < hc; y++)
-		for(int x = 0; x < wc; x++){
-			float real = timage[y*wc+x].real*timage[y*wc+x].real;
-			float imag = timage[y*wc+x].imag*timage[y*wc+x].imag;
-			pixels[y*wc+x] = sqrt(real+imag);
+	
+	for(i = 0; i < h; i++){
+		for(j = 0; j < w; j++){
+			td[i+j*h] = fd[i*w+j];
 		}
-	free(timage);
+	}
+	for(i = 0; i < w; i++){
+		fft(&td[h*i], &fd[h*i], hp);
+	}
+
+	for(i = 0; i < h; i++){
+		for(j = 0; j < w; j++){
+			double temp = sqrt(fd[j*h+i].real*fd[j*h+i].real+
+				              fd[j*h+i].imag*fd[j*h+i].imag)/100;
+		
+			if(temp>255){
+				temp = 255;
+			}
+			int t = lineBytes*(height - 1 - (i<h/2 ? i+h/2 : i-h/2)) + (j<w/2 ? j+w/2 : j-w/2);
+			pixels[t] = temp;
+		}
+	}
+	
+	int *mm = (int*)malloc(sizeof(int)*width*height);
+	for(i = 0; i < width*height; i++){
+		mm[i] = pixels[i];
+	}
+	writePixelsToFile("E:\\b.txt", (unsigned char*)mm, w, h);
 	free(td);
 	free(fd);
+	free(mm);
 }
 //中值
 unsigned char center_value(unsigned char* array, int length){
@@ -183,13 +223,12 @@ void TemplateLaplace(unsigned char* pixels, int width, int height, double * tem 
 				for(int n = -tem_w/2; n < tem_w/2; n++)
 					sum+=pixels[(y+m)*width+x+n]*tem[count++];
 			result[y*width+x] = sum*xishu;
-			if(result[y*width+x]<0){
+
+			if(result[y*width+x]<0)
 				result[y*width+x] = 0;
-			}
-			else if(result[y*width+x]>255){
-				
+			else if(result[y*width+x]>255)
 				result[y*width+x] = 255;
-			}
+			
 		}
 	}
 	for(int i = 0; i < width*height; i++){
@@ -243,8 +282,7 @@ int main(){
 	pixels = (unsigned char*)malloc(sizeof(lineBytes*height)*lineBytes*height);
 	fread(pixels, 1, lineBytes*height, file);
 	fclose(file);
-
-	//fourier(pixels, width, height);
+	fourier(pixels, width, height);
 
 	//MidFilter(pixels, width, height);
 	
@@ -254,7 +292,7 @@ int main(){
 	InteEqualize(pixels, width, height);
 
 
-	file = fopen("myimage.bmp", "wb");
+	file = fopen("my.bmp", "wb");
 	if(file==NULL)
 		return 0;
 	fwrite(&fileHeader, sizeof(BITMAPFILEHEADER), 1, file);
